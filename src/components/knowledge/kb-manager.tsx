@@ -13,50 +13,55 @@ import type { KBDocument } from '@/types';
 
 interface KnowledgeBaseManagerProps { botId: string; }
 
-const statusConfig: Record<string, { label: string; variant: 'info' | 'warning' | 'success' | 'error'; icon: typeof Loader2 }> = {
-  uploading: { label: 'Caricamento...', variant: 'info', icon: Loader2 },
-  processing: { label: 'Elaborazione...', variant: 'warning', icon: Loader2 },
-  indexed: { label: 'Indicizzato', variant: 'success', icon: CheckCircle },
-  error: { label: 'Errore', variant: 'error', icon: AlertCircle },
+const statusConfig: Record<string, any> = {
+  uploading:   { label: 'Caricamento...', variant: 'info',    icon: Loader2 },
+  processing:  { label: 'Elaborazione...', variant: 'warning', icon: Loader2 },
+  indexed:     { label: 'Indicizzato',    variant: 'success', icon: CheckCircle },
+  error:       { label: 'Errore',         variant: 'error',   icon: AlertCircle },
 };
 
-// Load mammoth.js from CDN for client-side DOCX parsing
+/* ── Client-side CDN loaders ── */
+
 function loadMammoth(): Promise<any> {
   return new Promise((resolve, reject) => {
     if ((window as any).mammoth) { resolve((window as any).mammoth); return; }
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js';
-    script.onload = () => resolve((window as any).mammoth);
-    script.onerror = () => reject(new Error('Failed to load mammoth.js'));
-    document.head.appendChild(script);
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js';
+    s.onload = () => resolve((window as any).mammoth);
+    s.onerror = () => reject(new Error('Failed to load mammoth.js'));
+    document.head.appendChild(s);
   });
 }
 
-// Load pdf.js from CDN for client-side PDF parsing
 function loadPdfJs(): Promise<any> {
   return new Promise((resolve, reject) => {
     if ((window as any).pdfjsLib) { resolve((window as any).pdfjsLib); return; }
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    script.onload = () => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = () => {
       const lib = (window as any).pdfjsLib;
       lib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       resolve(lib);
     };
-    script.onerror = () => reject(new Error('Failed to load pdf.js'));
-    document.head.appendChild(script);
+    s.onerror = () => reject(new Error('Failed to load pdf.js'));
+    document.head.appendChild(s);
   });
 }
 
+/* ── Client-side text extraction ── */
+
 async function extractText(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
+
   if (file.name.endsWith('.docx')) {
     const mammoth = await loadMammoth();
     const result = await mammoth.extractRawText({ arrayBuffer });
     return result.value;
-  } else if (file.name.endsWith('.pdf')) {
+  }
+
+  if (file.name.endsWith('.pdf')) {
     const pdfjsLib = await loadPdfJs();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
     const pages: string[] = [];
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
@@ -65,8 +70,37 @@ async function extractText(file: File): Promise<string> {
     }
     return pages.join('\n');
   }
-  throw new Error('Unsupported file type');
+
+  // Plain text fallback
+  return new TextDecoder().decode(arrayBuffer);
 }
+
+/* ── Client-side chunking ── */
+
+function chunkText(text: string): string[] {
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  if (cleaned.length <= 1000) return cleaned.length > 50 ? [cleaned] : [];
+
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < cleaned.length) {
+    let end = Math.min(start + 1000, cleaned.length);
+    if (end < cleaned.length) {
+      const bp = Math.max(
+        cleaned.lastIndexOf('. ', end),
+        cleaned.lastIndexOf('\n', end)
+      );
+      if (bp > start + 500) end = bp + 1;
+    }
+    const chunk = cleaned.slice(start, end).trim();
+    if (chunk.length > 50) chunks.push(chunk);
+    start = end - 200;
+    if (start >= cleaned.length) break;
+  }
+  return chunks;
+}
+
+/* ── Component ── */
 
 export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
   const [documents, setDocuments] = useState<KBDocument[]>([]);
@@ -87,6 +121,8 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
     } catch {} finally { setIsLoading(false); }
   };
 
+  /* ── Embeddings (batched, called after all chunks saved) ── */
+
   const processEmbeddings = useCallback(async (docId: string) => {
     let done = false;
     while (!done) {
@@ -105,146 +141,250 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
         done = data.done;
         const tot = data.total || 0;
         const rem = data.remaining || 0;
-        setProgress(p => ({ ...p, [docId]: done ? 'Completato!' : 'Embedding ' + (tot - rem) + '/' + tot }));
+        setProgress(p => ({
+          ...p,
+          [docId]: done ? 'Completato!' : 'Embedding ' + (tot - rem) + '/' + tot,
+        }));
         if (done) {
-          setDocuments(prev => prev.map(d => d.id === docId ? { ...d, status: 'indexed' as const, chunkCount: tot } : d));
+          setDocuments(prev =>
+            prev.map(d => d.id === docId ? { ...d, status: 'indexed' as const, chunkCount: tot } : d)
+          );
           notify({ type: 'success', title: 'Indicizzazione completata', message: tot + ' chunks indicizzati.' });
           setTimeout(() => setProgress(p => { const n = { ...p }; delete n[docId]; return n; }), 3000);
         }
-      } catch { setProgress(p => ({ ...p, [docId]: 'Errore di rete' })); return; }
+      } catch {
+        setProgress(p => ({ ...p, [docId]: 'Errore di rete' }));
+        return;
+      }
     }
   }, [notify]);
 
+  /* ── Upload: extract → chunk client-side → send batches of 20 ── */
+
   const uploadFile = useCallback(async (file: File) => {
-    if (!file.name.endsWith('.pdf') && !file.name.endsWith('.docx')) {
-      notify({ type: 'error', title: 'Formato non supportato', message: 'Solo PDF o DOCX.' }); return;
+    if (!file.name.endsWith('.pdf') && !file.name.endsWith('.docx') && !file.name.endsWith('.txt')) {
+      notify({ type: 'error', title: 'Formato non supportato', message: 'Solo PDF, DOCX o TXT.' });
+      return;
     }
     if (file.size > 20 * 1024 * 1024) {
-      notify({ type: 'error', title: 'File troppo grande', message: 'Max 20 MB.' }); return;
+      notify({ type: 'error', title: 'File troppo grande', message: 'Max 20 MB.' });
+      return;
     }
 
     setIsUploading(true);
     try {
-      // Extract text client-side
+      // 1. Extract text client-side
       setProgress(p => ({ ...p, uploading: 'Estrazione testo...' }));
       const text = await extractText(file);
       if (!text || text.trim().length < 10) {
-        notify({ type: 'error', title: 'Nessun testo trovato', message: 'Il documento sembra vuoto.' }); return;
+        notify({ type: 'error', title: 'Nessun testo trovato', message: 'Il documento sembra vuoto.' });
+        return;
       }
-      setProgress(p => ({ ...p, uploading: 'Salvataggio...' }));
 
-      // Send extracted text to server
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          botId, fileName: file.name, fileSize: file.size,
-          fileType: file.name.endsWith('.pdf') ? 'pdf' : 'docx', text,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      // 2. Chunk client-side
+      setProgress(p => ({ ...p, uploading: 'Suddivisione in chunks...' }));
+      const allChunks = chunkText(text);
+      if (allChunks.length === 0) {
+        notify({ type: 'error', title: 'Nessun contenuto utile', message: 'Testo troppo corto.' });
+        return;
+      }
 
-      setDocuments(prev => [data.document, ...prev]);
-      setProgress(p => { const n = { ...p }; delete n.uploading; return n; });
-      notify({ type: 'success', title: 'Testo estratto', message: data.document.chunkCount + ' chunks â avvio embedding...' });
+      // 3. Send chunks in batches of 20 to avoid OOM on server
+      const BATCH_SIZE = 20;
+      let documentId: string | null = null;
+      let offset = 0;
 
-      if (data.needsEmbeddings) {
-        setProgress(p => ({ ...p, [data.document.id]: 'Avvio embedding...' }));
-        processEmbeddings(data.document.id);
+      for (let i = 0; i < allChunks.length; i += BATCH_SIZE) {
+        const batch = allChunks.slice(i, i + BATCH_SIZE);
+        const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(allChunks.length / BATCH_SIZE);
+
+        setProgress(p => ({
+          ...p,
+          uploading: 'Salvataggio batch ' + batchNum + '/' + totalBatches + ' (' + allChunks.length + ' chunks)',
+        }));
+
+        const payload: any = {
+          botId,
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.name.endsWith('.pdf') ? 'pdf' : file.name.endsWith('.docx') ? 'docx' : 'txt',
+          chunks: batch,
+          chunkOffset: offset,
+        };
+
+        if (documentId) {
+          payload.documentId = documentId;
+        }
+
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Upload batch failed');
+
+        documentId = data.documentId;
+        offset = data.chunkOffset;
+      }
+
+      // 4. Update document status
+      if (documentId) {
+        await fetch('/api/documents/finalize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ documentId, chunkCount: allChunks.length }),
+        });
+
+        const newDoc: KBDocument = {
+          id: documentId,
+          botId,
+          fileName: file.name,
+          fileType: file.name.endsWith('.pdf') ? 'pdf' : 'docx',
+          fileSize: file.size,
+          status: 'processing',
+          storagePath: '',
+          chunkCount: allChunks.length,
+          createdAt: new Date().toISOString(),
+        };
+        setDocuments(prev => [newDoc, ...prev]);
+        setProgress(p => { const n = { ...p }; delete n.uploading; return n; });
+        notify({
+          type: 'success',
+          title: 'Testo estratto',
+          message: allChunks.length + ' chunks — avvio embedding...',
+        });
+
+        // 5. Start embeddings
+        setProgress(p => ({ ...p, [documentId!]: 'Avvio embedding...' }));
+        processEmbeddings(documentId);
       }
     } catch (err) {
-      notify({ type: 'error', title: 'Errore', message: err instanceof Error ? err.message : 'Upload fallito' });
+      notify({
+        type: 'error',
+        title: 'Errore',
+        message: err instanceof Error ? err.message : 'Upload fallito',
+      });
     } finally {
       setIsUploading(false);
       setProgress(p => { const n = { ...p }; delete n.uploading; return n; });
     }
   }, [botId, notify, processEmbeddings]);
 
+  /* ── Delete ── */
+
   const deleteDoc = async (doc: KBDocument) => {
     try {
       const res = await fetch('/api/documents', {
-        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: doc.id, storagePath: doc.storagePath }),
       });
       if (!res.ok) throw new Error('Delete failed');
       setDocuments(prev => prev.filter(d => d.id !== doc.id));
       notify({ type: 'info', title: 'Rimosso', message: doc.fileName });
-    } catch { notify({ type: 'error', title: 'Errore', message: 'Impossibile eliminare.' }); }
+    } catch {
+      notify({ type: 'error', title: 'Errore', message: 'Impossibile eliminare.' });
+    }
   };
 
+  /* ── Render ── */
+
   return (
-    <div className="space-y-6 animate-fade-in">
-      <Card padding="none">
-        <div
-          onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={e => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files[0]; if (f) uploadFile(f); }}
-          onClick={() => fileInputRef.current?.click()}
-          className={'p-10 border-2 border-dashed rounded-2xl cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-3 text-center m-1 ' + (isDragging ? 'border-brand-400 bg-brand-50' : 'border-surface-200 hover:border-brand-300 hover:bg-surface-50')}
-        >
-          <div className={'w-14 h-14 rounded-2xl flex items-center justify-center transition-colors ' + (isDragging ? 'bg-brand-100' : 'bg-surface-100')}>
-            <CloudUpload className={'w-7 h-7 ' + (isDragging ? 'text-brand-500' : 'text-surface-400')} />
-          </div>
-          <div>
-            <p className="font-semibold text-surface-800">{isUploading ? (progress.uploading || 'Elaborazione...') : 'Trascina un file qui'}</p>
-            <p className="text-sm text-surface-500 mt-1">oppure clicca per selezionare â PDF o DOCX, max 20 MB</p>
-          </div>
-          {isUploading && <Loader2 className="w-5 h-5 animate-spin text-brand-500" />}
-          <input ref={fileInputRef} type="file" accept=".pdf,.docx" className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ''; }} />
-        </div>
-      </Card>
+    <div className="space-y-6">
+      <div
+        onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={e => {
+          e.preventDefault();
+          setIsDragging(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f) uploadFile(f);
+        }}
+        onClick={() => fileInputRef.current?.click()}
+        className={
+          'p-10 border-2 border-dashed rounded-2xl cursor-pointer transition-all duration-200 ' +
+          'flex flex-col items-center justify-center gap-3 text-center m-1 ' +
+          (isDragging ? 'border-brand-400 bg-brand-50' : 'border-surface-200 hover:border-brand-300 hover:bg-surface-50')
+        }
+      >
+        <CloudUpload className="w-10 h-10 text-surface-400" />
+        <p className="font-medium text-surface-700">
+          {isUploading ? (progress.uploading || 'Elaborazione...') : 'Trascina un file qui'}
+        </p>
+        <p className="text-sm text-surface-400">oppure clicca per selezionare — PDF, DOCX o TXT, max 20 MB</p>
+        {isUploading && <Loader2 className="w-5 h-5 animate-spin text-brand-500" />}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.docx,.txt"
+          className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            if (f) uploadFile(f);
+            e.target.value = '';
+          }}
+        />
+      </div>
 
       <Card>
         <CardHeader>
-          <CardTitle><span className="flex items-center gap-2"><FileText className="w-5 h-5 text-brand-500" />Documenti ({documents.length})</span></CardTitle>
-          <Button variant="ghost" size="sm" onClick={fetchDocuments}>Aggiorna</Button>
+          <CardTitle className="text-lg">Documenti ({documents.length})</CardTitle>
         </CardHeader>
-
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-surface-400" /></div>
-        ) : documents.length === 0 ? (
-          <div className="text-center py-12 text-surface-400">
-            <File className="w-10 h-10 mx-auto mb-3 opacity-40" />
-            <p className="font-medium">Nessun documento</p>
-            <p className="text-sm mt-1">Carica file PDF o DOCX per creare la knowledge base.</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {documents.map(doc => {
-              const st = statusConfig[doc.status] ?? statusConfig.error;
-              const Icon = st.icon;
-              const prog = progress[doc.id];
-              return (
-                <div key={doc.id} className="flex items-center justify-between px-4 py-3 rounded-xl bg-surface-50 hover:bg-surface-100 transition-colors group">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-4 h-4 text-brand-600" />
+        <div className="px-6 pb-6">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-surface-400" />
+            </div>
+          ) : documents.length === 0 ? (
+            <div className="text-center py-8">
+              <FileText className="w-12 h-12 text-surface-300 mx-auto mb-3" />
+              <p className="text-surface-500 font-medium">Nessun documento</p>
+              <p className="text-sm text-surface-400">Carica file PDF o DOCX per creare la knowledge base.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {documents.map(doc => {
+                const st = statusConfig[doc.status] ?? statusConfig.error;
+                const Icon = st.icon;
+                const prog = progress[doc.id];
+                return (
+                  <div
+                    key={doc.id}
+                    className="flex items-center justify-between p-3 rounded-lg bg-surface-50 border border-surface-100"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <File className="w-5 h-5 text-surface-400 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm truncate">{doc.fileName}</p>
+                        <p className="text-xs text-surface-400">
+                          {formatFileSize(doc.fileSize)}
+                          {doc.chunkCount ? ' — ' + doc.chunkCount + ' chunks' : ''}
+                          {prog ? ' — ' + prog : ''}
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-surface-800 truncate">{doc.fileName}</p>
-                      <p className="text-xs text-surface-400">
-                        {formatFileSize(doc.fileSize)}
-                        {doc.chunkCount ? ' - ' + doc.chunkCount + ' chunks' : ''}
-                        {prog ? ' - ' + prog : ''}
-                      </p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant={st.variant as any} className="flex items-center gap-1">
+                        <Icon className={'w-3 h-3' + (st.icon === Loader2 ? ' animate-spin' : '')} />
+                        {st.label}
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); deleteDoc(doc); }}
+                      >
+                        <Trash2 className="w-4 h-4 text-surface-400" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={st.variant}>
-                      <Icon className={'w-3 h-3 mr-1 ' + (doc.status === 'processing' ? 'animate-spin' : '')} />
-                      {st.label}
-                    </Badge>
-                    <button onClick={() => deleteDoc(doc)} className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-rose-50 text-surface-400 hover:text-rose-500 transition-all">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
       </Card>
     </div>
   );
