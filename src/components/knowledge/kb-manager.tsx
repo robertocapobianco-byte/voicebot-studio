@@ -88,7 +88,7 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
-      notify({ type: 'error', title: 'File troppo grande', message: 'Il limite \u00e8 20 MB.' });
+      notify({ type: 'error', title: 'File troppo grande', message: 'Il limite è 20 MB.' });
       return;
     }
 
@@ -103,7 +103,7 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
       if (!res.ok) throw new Error(data.error);
 
       setDocuments((prev) => [data.document, ...prev]);
-      notify({ type: 'success', title: 'File caricato', message: file.name + ' — avvio indicizzazione...' });
+      notify({ type: 'success', title: 'File caricato', message: file.name + ' â avvio indicizzazione...' });
 
       // Start embedding processing
       if (data.needsEmbeddings) {
@@ -149,7 +149,7 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
           </div>
           <div>
             <p className="font-semibold text-surface-800">{isUploading ? 'Caricamento in corso...' : 'Trascina un file qui'}</p>
-            <p className="text-sm text-surface-500 mt-1">oppure clicca per selezionare — PDF o DOCX, max 20 MB</p>
+            <p className="text-sm text-surface-500 mt-1">oppure clicca per selezionare â PDF o DOCX, max 20 MB</p>
           </div>
           {isUploading && <Loader2 className="w-5 h-5 animate-spin text-brand-500" />}
           <input ref={fileInputRef} type="file" accept=".pdf,.docx" className="hidden"
@@ -192,8 +192,8 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
                       <p className="text-sm font-medium text-surface-800 truncate">{doc.fileName}</p>
                       <p className="text-xs text-surface-400">
                         {formatFileSize(doc.fileSize)}
-                        {doc.chunkCount ? ' — ' + doc.chunkCount + ' chunks' : ''}
-                        {progress ? ' — ' + progress : ''}
+                        {doc.chunkCount ? ' â ' + doc.chunkCount + ' chunks' : ''}
+                        {progress ? ' â ' + progress : ''}
                       </p>
                     </div>
                   </div>
