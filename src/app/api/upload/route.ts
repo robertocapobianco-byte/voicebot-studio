@@ -2,11 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/db/supabase';
 import { insertDocument, updateDocumentStatus } from '@/lib/db';
 import { DefaultDocumentProcessor, chunkText } from '@/lib/documents';
-import { SupabaseRetriever } from '@/lib/rag';
 import { generateId } from '@/lib/utils';
-import type { KBDocument, DocumentChunk } from '@/types';
+import type { DocumentChunk } from '@/types';
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const ALLOWED_TYPES = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
 
 export async function POST(request: NextRequest) {
@@ -19,7 +18,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'file and botId are required' }, { status: 400 });
     }
 
-    // Validate file
     if (!ALLOWED_TYPES.includes(file.type) && !file.name.endsWith('.pdf') && !file.name.endsWith('.docx')) {
       return NextResponse.json({ error: 'Only PDF and DOCX files are supported' }, { status: 400 });
     }
@@ -30,89 +28,63 @@ export async function POST(request: NextRequest) {
 
     const docId = generateId();
     const fileType = file.name.endsWith('.pdf') ? 'pdf' : 'docx';
-    const storagePath = `kb/${botId}/${docId}/${file.name}`;
+    const storagePath = 'kb/' + botId + '/' + docId + '/' + file.name;
 
-    // 1. Upload file to Supabase Storage
+    // 1. Upload to Supabase Storage
     const db = createServerClient();
     const buffer = Buffer.from(await file.arrayBuffer());
 
     const { error: uploadError } = await db.storage
       .from('documents')
-      .upload(storagePath, buffer, {
-        contentType: file.type,
-        upsert: false,
-      });
+      .upload(storagePath, buffer, { contentType: file.type, upsert: false });
 
-    if (uploadError) {
-      throw new Error(`Storage upload failed: ${uploadError.message}`);
-    }
+    if (uploadError) throw new Error('Storage upload failed: ' + uploadError.message);
 
     // 2. Create document record
     const doc = await insertDocument({
-      id: docId,
-      botId,
-      fileName: file.name,
-      fileType,
-      fileSize: file.size,
-      status: 'processing',
-      storagePath,
+      id: docId, botId, fileName: file.name, fileType, fileSize: file.size, status: 'processing', storagePath,
     });
 
-    // 3. Process document in background (non-blocking for the response)
-    processDocumentAsync(docId, botId, buffer, fileType).catch((err) => {
-      console.error(`Background processing failed for document ${docId}:`, err);
-    });
+    // 3. Extract text and save chunks (without embeddings yet)
+    try {
+      const processor = new DefaultDocumentProcessor();
+      const text = await processor.extractText(buffer, fileType);
 
-    return NextResponse.json({ document: doc, message: 'Upload successful, processing started' });
+      if (!text || text.trim().length < 10) {
+        await updateDocumentStatus(docId, 'error', { errorMessage: 'No extractable text found' });
+        return NextResponse.json({ document: { ...doc, status: 'error' }, message: 'No text found' });
+      }
+
+      const chunks = chunkText(text, { chunkSize: 1000, overlap: 200 });
+
+      // Save chunks to DB without embeddings
+      const chunkRows = chunks.map((content, index) => ({
+        id: generateId(),
+        document_id: docId,
+        bot_id: botId,
+        content,
+        metadata: { fileName: file.name, chunkIndex: index },
+        chunk_index: index,
+      }));
+
+      const { error: chunkError } = await db.from('document_chunks').insert(chunkRows);
+      if (chunkError) throw new Error('Failed to save chunks: ' + chunkError.message);
+
+      await updateDocumentStatus(docId, 'processing', { chunkCount: chunks.length });
+
+      return NextResponse.json({
+        document: { ...doc, status: 'processing', chunkCount: chunks.length },
+        message: 'Text extracted, ' + chunks.length + ' chunks saved. Call /api/embeddings to generate embeddings.',
+        needsEmbeddings: true,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Processing failed';
+      await updateDocumentStatus(docId, 'error', { errorMessage: msg });
+      return NextResponse.json({ document: { ...doc, status: 'error' }, message: msg }, { status: 500 });
+    }
   } catch (err) {
     console.error('Upload API error:', err);
     const message = err instanceof Error ? err.message : 'Upload failed';
     return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
-
-/**
- * Process document: extract text → chunk → embed → index.
- * Runs after the upload response is sent.
- */
-async function processDocumentAsync(
-  docId: string,
-  botId: string,
-  buffer: Buffer,
-  fileType: string
-): Promise<void> {
-  try {
-    // Extract text
-    const processor = new DefaultDocumentProcessor();
-    const text = await processor.extractText(buffer, fileType);
-
-    if (!text || text.trim().length < 10) {
-      await updateDocumentStatus(docId, 'error', { errorMessage: 'No extractable text found' });
-      return;
-    }
-
-    // Chunk
-    const chunks = chunkText(text, { chunkSize: 1000, overlap: 200 });
-
-    // Build chunk objects
-    const docChunks: DocumentChunk[] = chunks.map((content, index) => ({
-      id: generateId(),
-      documentId: docId,
-      botId,
-      content,
-      metadata: { fileName: docId, chunkIndex: index },
-      chunkIndex: index,
-    }));
-
-    // Generate embeddings and store
-    const retriever = new SupabaseRetriever();
-    await retriever.index(docChunks);
-
-    // Mark as indexed
-    await updateDocumentStatus(docId, 'indexed', { chunkCount: chunks.length });
-  } catch (err) {
-    console.error(`Document processing error for ${docId}:`, err);
-    const errorMessage = err instanceof Error ? err.message : 'Processing failed';
-    await updateDocumentStatus(docId, 'error', { errorMessage });
   }
 }
