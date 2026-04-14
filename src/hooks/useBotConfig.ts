@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import type { BotConfig, BotPersonality } from '@/types';
-import { generateId } from '@/lib/utils';
 
 const DEFAULT_PERSONALITY: BotPersonality = {
   tone: 'professional',
@@ -10,6 +9,10 @@ const DEFAULT_PERSONALITY: BotPersonality = {
   detailLevel: 'balanced',
   language: 'it-IT',
 };
+
+function generateId(): string {
+  return crypto.randomUUID();
+}
 
 const DEFAULT_CONFIG: BotConfig = {
   id: '',
@@ -33,11 +36,7 @@ export function useBotConfig() {
     if (typeof window === 'undefined') return { ...DEFAULT_CONFIG, id: 'default' };
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        // Invalid JSON, use default
-      }
+      try { return JSON.parse(saved); } catch { /* use default */ }
     }
     return { ...DEFAULT_CONFIG, id: generateId() };
   });
@@ -70,14 +69,29 @@ export function useBotConfig() {
   const saveToServer = useCallback(async () => {
     setIsSaving(true);
     try {
-      // Future: POST to /api/bots to persist in Supabase
-      // For now, localStorage is the persistence layer
-      await new Promise((r) => setTimeout(r, 300)); // Simulate save
+      const res = await fetch('/api/bots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Save failed' }));
+        throw new Error(err.error || 'Save failed');
+      }
+      const data = await res.json();
+      if (data.config) {
+        setConfig(data.config);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data.config));
+      }
+      setLastSaved(new Date());
+    } catch (err) {
+      console.error('Failed to save to server:', err);
+      // Still save locally
       setLastSaved(new Date());
     } finally {
       setIsSaving(false);
     }
-  }, []);
+  }, [config]);
 
   const resetConfig = useCallback(() => {
     const newConfig = { ...DEFAULT_CONFIG, id: generateId() };
