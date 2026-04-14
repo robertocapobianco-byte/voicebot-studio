@@ -77,14 +77,16 @@ async function extractText(file: File): Promise<string> {
 
 /* ââ Client-side chunking ââ */
 
-function chunkText(text: string): string[] {
+ function chunkText(text: string): string[] {
   const cleaned = text.replace(/\s+/g, ' ').trim();
   if (cleaned.length <= 1000) return cleaned.length > 50 ? [cleaned] : [];
 
+  const CHUNK_SIZE = 1000;
+  const OVERLAP = 200;
   const chunks: string[] = [];
   let start = 0;
   while (start < cleaned.length) {
-    let end = Math.min(start + 1000, cleaned.length);
+    let end = Math.min(start + CHUNK_SIZE, cleaned.length);
     if (end < cleaned.length) {
       const bp = Math.max(
         cleaned.lastIndexOf('. ', end),
@@ -94,8 +96,11 @@ function chunkText(text: string): string[] {
     }
     const chunk = cleaned.slice(start, end).trim();
     if (chunk.length > 50) chunks.push(chunk);
-    start = end - 200;
-    if (start >= cleaned.length) break;
+    const nextStart = end >= cleaned.length
+      ? cleaned.length
+      : Math.max(start + CHUNK_SIZE - OVERLAP, end - OVERLAP);
+    if (nextStart <= start) break;
+    start = nextStart;
   }
   return chunks;
 }
