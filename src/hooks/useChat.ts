@@ -20,7 +20,6 @@ export function useChat({ botConfig }: UseChatOptions) {
       if (!text.trim()) return null;
       setError(null);
 
-      // Add user message
       const userMessage: ChatMessage = {
         id: generateId(),
         role: 'user',
@@ -29,7 +28,6 @@ export function useChat({ botConfig }: UseChatOptions) {
       };
       setMessages((prev) => [...prev, userMessage]);
 
-      // Build conversation history for the API
       const history: LLMMessage[] = messages.map((m) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
@@ -47,18 +45,18 @@ export function useChat({ botConfig }: UseChatOptions) {
             botId: botConfig.id,
             message: text.trim(),
             conversationHistory: history,
+            botConfig: botConfig, // Send full config as fallback
           }),
           signal: abortRef.current.signal,
         });
 
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({ error: 'Unknown error' }));
-          throw new Error(errBody.error || `API returned ${res.status}`);
+          throw new Error(errBody.error || 'API returned ' + res.status);
         }
 
         const data = await res.json();
 
-        // Add assistant message
         const assistantMessage: ChatMessage = {
           id: generateId(),
           role: 'assistant',
@@ -80,7 +78,7 @@ export function useChat({ botConfig }: UseChatOptions) {
         abortRef.current = null;
       }
     },
-    [botConfig.id, messages]
+    [botConfig, messages]
   );
 
   const clearMessages = useCallback(() => {
