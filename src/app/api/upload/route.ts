@@ -8,22 +8,9 @@ export const dynamic = 'force-dynamic';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
-async function extractTextFromDocx(arrayBuffer: ArrayBuffer): Promise<string> {
-  const mammoth = await import('mammoth');
-  const result = await mammoth.extractRawText({ arrayBuffer });
-  return result.value;
-}
-
-async function extractTextFromPdf(arrayBuffer: ArrayBuffer): Promise<string> {
-  const pdfParse = (await import('pdf-parse')).default;
-  const buffer = Buffer.from(arrayBuffer);
-  const result = await pdfParse(buffer);
-  return result.text;
-}
-
-function chunkTextSimple(text: string): string[] {
+function chunkText(text: string): string[] {
   const cleaned = text.replace(/\s+/g, ' ').trim();
-  if (cleaned.length <= 1000) return [cleaned];
+  if (cleaned.length <= 1000) return cleaned.length > 50 ? [cleaned] : [];
   const chunks: string[] = [];
   let start = 0;
   while (start < cleaned.length) {
@@ -42,6 +29,44 @@ function chunkTextSimple(text: string): string[] {
 
 export async function POST(request: NextRequest) {
   try {
+    const contentType = request.headers.get('content-type') || '';
+
+    // Mode 1: JSON with pre-extracted text (from client-side parsing)
+    if (contentType.includes('application/json')) {
+      const { botId, fileName, fileSize, fileType, text, storagePath } = await request.json();
+      if (!botId || !text || !fileName) {
+        return NextResponse.json({ error: 'botId, fileName, and text are required' }, { status: 400 });
+      }
+
+      const docId = generateId();
+      const doc = await insertDocument({
+        id: docId, botId, fileName, fileType: fileType || 'docx',
+        fileSize: fileSize || text.length, status: 'processing',
+        storagePath: storagePath || 'kb/' + botId + '/' + docId + '/' + fileName,
+      });
+
+      const chunks = chunkText(text);
+      if (chunks.length === 0) {
+        await updateDocumentStatus(docId, 'error', { errorMessage: 'No usable text found' });
+        return NextResponse.json({ document: { ...doc, status: 'error' }, message: 'No text' });
+      }
+
+      const db = createServerClient();
+      const chunkRows = chunks.map((content, index) => ({
+        id: generateId(), document_id: docId, bot_id: botId,
+        content, metadata: { fileName, chunkIndex: index }, chunk_index: index,
+      }));
+
+      for (let i = 0; i < chunkRows.length; i += 50) {
+        const { error: chunkError } = await db.from('document_chunks').insert(chunkRows.slice(i, i + 50));
+        if (chunkError) throw new Error('Failed to save chunks: ' + chunkError.message);
+      }
+
+      await updateDocumentStatus(docId, 'processing', { chunkCount: chunks.length });
+      return NextResponse.json({ document: { ...doc, status: 'processing', chunkCount: chunks.length }, needsEmbeddings: true });
+    }
+
+    // Mode 2: FormData file upload with server-side parsing
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const botId = formData.get('botId') as string | null;
@@ -53,7 +78,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Only PDF and DOCX files are supported' }, { status: 400 });
     }
     if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: 'File size exceeds 20 MB limit' }, { status: 400 });
+      return NextResponse.json({ error: 'File exceeds 20 MB' }, { status: 400 });
     }
 
     const docId = generateId();
@@ -61,67 +86,53 @@ export async function POST(request: NextRequest) {
     const storagePath = 'kb/' + botId + '/' + docId + '/' + file.name;
     const arrayBuffer = await file.arrayBuffer();
 
-    // 1. Upload to storage
     const db = createServerClient();
     const { error: uploadError } = await db.storage
       .from('documents')
       .upload(storagePath, Buffer.from(arrayBuffer), { contentType: file.type, upsert: false });
+    if (uploadError) throw new Error('Storage failed: ' + uploadError.message);
 
-    if (uploadError) throw new Error('Storage upload failed: ' + uploadError.message);
-
-    // 2. Create document record
     const doc = await insertDocument({
       id: docId, botId, fileName: file.name, fileType,
       fileSize: file.size, status: 'processing', storagePath,
     });
 
-    // 3. Extract text
     let text = '';
     try {
       if (fileType === 'docx') {
-        text = await extractTextFromDocx(arrayBuffer);
+        const mammoth = await import('mammoth');
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        text = result.value;
       } else {
-        text = await extractTextFromPdf(arrayBuffer);
+        const pdfParse = (await import('pdf-parse')).default;
+        text = (await pdfParse(Buffer.from(arrayBuffer))).text;
       }
-    } catch (parseErr) {
-      const msg = parseErr instanceof Error ? parseErr.message : 'Parse failed';
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Parse failed';
       await updateDocumentStatus(docId, 'error', { errorMessage: msg });
       return NextResponse.json({ document: { ...doc, status: 'error' }, message: msg }, { status: 500 });
     }
 
     if (!text || text.trim().length < 10) {
-      await updateDocumentStatus(docId, 'error', { errorMessage: 'No extractable text' });
-      return NextResponse.json({ document: { ...doc, status: 'error' }, message: 'No text found' });
+      await updateDocumentStatus(docId, 'error', { errorMessage: 'No text' });
+      return NextResponse.json({ document: { ...doc, status: 'error' } });
     }
 
-    // 4. Chunk
-    const chunks = chunkTextSimple(text);
-
-    // 5. Save chunks without embeddings
+    const chunks = chunkText(text);
     const chunkRows = chunks.map((content, index) => ({
-      id: generateId(),
-      document_id: docId,
-      bot_id: botId,
-      content,
-      metadata: { fileName: file.name, chunkIndex: index },
-      chunk_index: index,
+      id: generateId(), document_id: docId, bot_id: botId,
+      content, metadata: { fileName: file.name, chunkIndex: index }, chunk_index: index,
     }));
 
     for (let i = 0; i < chunkRows.length; i += 50) {
-      const batch = chunkRows.slice(i, i + 50);
-      const { error: chunkError } = await db.from('document_chunks').insert(batch);
-      if (chunkError) throw new Error('Failed to save chunks: ' + chunkError.message);
+      const { error: chunkError } = await db.from('document_chunks').insert(chunkRows.slice(i, i + 50));
+      if (chunkError) throw new Error('Chunk save failed: ' + chunkError.message);
     }
 
     await updateDocumentStatus(docId, 'processing', { chunkCount: chunks.length });
-
-    return NextResponse.json({
-      document: { ...doc, status: 'processing', chunkCount: chunks.length },
-      needsEmbeddings: true,
-    });
+    return NextResponse.json({ document: { ...doc, status: 'processing', chunkCount: chunks.length }, needsEmbeddings: true });
   } catch (err) {
-    console.error('Upload API error:', err);
-    const message = err instanceof Error ? err.message : 'Upload failed';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('Upload error:', err);
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Upload failed' }, { status: 500 });
   }
 }
