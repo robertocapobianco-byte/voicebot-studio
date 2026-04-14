@@ -21,7 +21,7 @@ const statusConfig: Record<string, { label: string; variant: 'info' | 'warning' 
 };
 
 // Load mammoth.js from CDN for client-side DOCX parsing
-function loadMammoth(): Promise<typeof window.mammoth> {
+function loadMammoth(): Promise<any> {
   return new Promise((resolve, reject) => {
     if ((window as any).mammoth) { resolve((window as any).mammoth); return; }
     const script = document.createElement('script');
@@ -147,7 +147,7 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
 
       setDocuments(prev => [data.document, ...prev]);
       setProgress(p => { const n = { ...p }; delete n.uploading; return n; });
-      notify({ type: 'success', title: 'Testo estratto', message: data.document.chunkCount + ' chunks — avvio embedding...' });
+      notify({ type: 'success', title: 'Testo estratto', message: data.document.chunkCount + ' chunks â avvio embedding...' });
 
       if (data.needsEmbeddings) {
         setProgress(p => ({ ...p, [data.document.id]: 'Avvio embedding...' }));
@@ -188,7 +188,7 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
           </div>
           <div>
             <p className="font-semibold text-surface-800">{isUploading ? (progress.uploading || 'Elaborazione...') : 'Trascina un file qui'}</p>
-            <p className="text-sm text-surface-500 mt-1">oppure clicca per selezionare — PDF o DOCX, max 20 MB</p>
+            <p className="text-sm text-surface-500 mt-1">oppure clicca per selezionare â PDF o DOCX, max 20 MB</p>
           </div>
           {isUploading && <Loader2 className="w-5 h-5 animate-spin text-brand-500" />}
           <input ref={fileInputRef} type="file" accept=".pdf,.docx" className="hidden"
