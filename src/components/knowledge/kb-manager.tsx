@@ -20,7 +20,7 @@ const statusConfig: Record<string, any> = {
   error:       { label: 'Errore',         variant: 'error',   icon: AlertCircle },
 };
 
-/* ── Client-side CDN loaders ── */
+/* ââ Client-side CDN loaders ââ */
 
 function loadMammoth(): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -48,7 +48,7 @@ function loadPdfJs(): Promise<any> {
   });
 }
 
-/* ── Client-side text extraction ── */
+/* ââ Client-side text extraction ââ */
 
 async function extractText(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
@@ -75,7 +75,7 @@ async function extractText(file: File): Promise<string> {
   return new TextDecoder().decode(arrayBuffer);
 }
 
-/* ── Client-side chunking ── */
+/* ââ Client-side chunking ââ */
 
 function chunkText(text: string): string[] {
   const cleaned = text.replace(/\s+/g, ' ').trim();
@@ -100,7 +100,7 @@ function chunkText(text: string): string[] {
   return chunks;
 }
 
-/* ── Component ── */
+/* ââ Component ââ */
 
 export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
   const [documents, setDocuments] = useState<KBDocument[]>([]);
@@ -121,7 +121,7 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
     } catch {} finally { setIsLoading(false); }
   };
 
-  /* ── Embeddings (batched, called after all chunks saved) ── */
+  /* ââ Embeddings (batched, called after all chunks saved) ââ */
 
   const processEmbeddings = useCallback(async (docId: string) => {
     let done = false;
@@ -159,7 +159,7 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
     }
   }, [notify]);
 
-  /* ── Upload: extract → chunk client-side → send batches of 20 ── */
+  /* ââ Upload: extract â chunk client-side â send batches of 20 ââ */
 
   const uploadFile = useCallback(async (file: File) => {
     if (!file.name.endsWith('.pdf') && !file.name.endsWith('.docx') && !file.name.endsWith('.txt')) {
@@ -248,13 +248,14 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
           storagePath: '',
           chunkCount: allChunks.length,
           createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         };
         setDocuments(prev => [newDoc, ...prev]);
         setProgress(p => { const n = { ...p }; delete n.uploading; return n; });
         notify({
           type: 'success',
           title: 'Testo estratto',
-          message: allChunks.length + ' chunks — avvio embedding...',
+          message: allChunks.length + ' chunks â avvio embedding...',
         });
 
         // 5. Start embeddings
@@ -273,7 +274,7 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
     }
   }, [botId, notify, processEmbeddings]);
 
-  /* ── Delete ── */
+  /* ââ Delete ââ */
 
   const deleteDoc = async (doc: KBDocument) => {
     try {
@@ -290,7 +291,7 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
     }
   };
 
-  /* ── Render ── */
+  /* ââ Render ââ */
 
   return (
     <div className="space-y-6">
@@ -314,7 +315,7 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
         <p className="font-medium text-surface-700">
           {isUploading ? (progress.uploading || 'Elaborazione...') : 'Trascina un file qui'}
         </p>
-        <p className="text-sm text-surface-400">oppure clicca per selezionare — PDF, DOCX o TXT, max 20 MB</p>
+        <p className="text-sm text-surface-400">oppure clicca per selezionare â PDF, DOCX o TXT, max 20 MB</p>
         {isUploading && <Loader2 className="w-5 h-5 animate-spin text-brand-500" />}
         <input
           ref={fileInputRef}
@@ -361,8 +362,8 @@ export function KnowledgeBaseManager({ botId }: KnowledgeBaseManagerProps) {
                         <p className="font-medium text-sm truncate">{doc.fileName}</p>
                         <p className="text-xs text-surface-400">
                           {formatFileSize(doc.fileSize)}
-                          {doc.chunkCount ? ' — ' + doc.chunkCount + ' chunks' : ''}
-                          {prog ? ' — ' + prog : ''}
+                          {doc.chunkCount ? ' â ' + doc.chunkCount + ' chunks' : ''}
+                          {prog ? ' â ' + prog : ''}
                         </p>
                       </div>
                     </div>
