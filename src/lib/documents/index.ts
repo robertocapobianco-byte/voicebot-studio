@@ -1,1 +1,1 @@
-export { DefaultDocumentProcessor, chunkText } from './processor';
+export { chunkText } from './processor';
