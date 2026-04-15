@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useBotConfig } from '@/hooks';
+import { useToast } from '@/components/ui/toast-provider';
 import { Select } from '@/components/ui/select';
 import {
   Key,
@@ -31,18 +32,21 @@ const apiKeyFields: {
 ];
 
 export default function SettingsPage() {
-  const { config, apiKeys, apiKeysLoaded, updateConfig, updateApiKeys, saveToServer, isSaving, lastSaved } = useBotConfig();
+  const { config, apiKeys, apiKeysLoaded, updateConfig, updateApiKeys, saveToServer, isSaving } = useBotConfig();
+  const { notify } = useToast();
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
-  const [keysSaved, setKeysSaved] = useState(false);
 
   const toggleVisibility = (key: string) => {
     setVisibleKeys((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const handleSaveKeys = async () => {
-    await saveToServer();
-    setKeysSaved(true);
-    setTimeout(() => setKeysSaved(false), 3000);
+    try {
+      await saveToServer();
+      notify({ type: 'success', title: 'Chiavi API salvate', message: 'Le chiavi sono state salvate su Supabase.' });
+    } catch {
+      notify({ type: 'error', title: 'Errore', message: 'Salvataggio chiavi fallito.' });
+    }
   };
 
   return (
@@ -64,12 +68,6 @@ export default function SettingsPage() {
                 Chiavi API
               </span>
             </CardTitle>
-            {lastSaved && keysSaved && (
-              <Badge variant="success">
-                <CheckCircle className="w-3 h-3 mr-1" />
-                Salvato
-              </Badge>
-            )}
           </CardHeader>
 
           <p className="text-sm text-surface-500 mb-4">
