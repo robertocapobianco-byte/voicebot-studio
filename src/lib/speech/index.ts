@@ -1,6 +1,7 @@
 import type { SpeechToTextProvider, TextToSpeechProvider, STTProviderID, TTSProviderID } from '@/types';
 import { WebSpeechSTT } from './web-stt';
 import { WebSpeechTTS } from './web-tts';
+import { ElevenLabsTTS } from './elevenlabs-tts';
 
 /** Get an STT provider by ID */
 export function getSTTProvider(id: STTProviderID): SpeechToTextProvider {
@@ -21,8 +22,7 @@ export function getTTSProvider(id: TTSProviderID): TextToSpeechProvider {
     case 'web-speech':
       return new WebSpeechTTS();
     case 'elevenlabs':
-      // ElevenLabs adapter can be added here
-      throw new Error('ElevenLabs TTS not yet implemented. Use web-speech for now.');
+      return new ElevenLabsTTS();
     default:
       return new WebSpeechTTS();
   }
@@ -30,3 +30,4 @@ export function getTTSProvider(id: TTSProviderID): TextToSpeechProvider {
 
 export { WebSpeechSTT } from './web-stt';
 export { WebSpeechTTS } from './web-tts';
+export { ElevenLabsTTS } from './elevenlabs-tts';
