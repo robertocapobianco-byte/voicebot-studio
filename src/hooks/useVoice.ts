@@ -7,11 +7,12 @@ import type { STTProviderID, TTSProviderID, VoiceChatState } from '@/types';
 interface UseVoiceOptions {
   sttProvider: STTProviderID;
   ttsProvider: TTSProviderID;
+  botId?: string;
   onTranscript: (text: string) => void;
   onStateChange?: (state: VoiceChatState) => void;
 }
 
-export function useVoice({ sttProvider, ttsProvider, onTranscript, onStateChange }: UseVoiceOptions) {
+export function useVoice({ sttProvider, ttsProvider, botId, onTranscript, onStateChange }: UseVoiceOptions) {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -26,8 +27,13 @@ export function useVoice({ sttProvider, ttsProvider, onTranscript, onStateChange
   }, [sttProvider]);
 
   useEffect(() => {
-    ttsRef.current = getTTSProvider(ttsProvider);
-  }, [ttsProvider]);
+    const tts = getTTSProvider(ttsProvider);
+    // Pass botId to ElevenLabs so server can look up per-bot API keys
+    if ('setBotId' in tts && botId) {
+      (tts as import('@/lib/speech/elevenlabs-tts').ElevenLabsTTS).setBotId(botId);
+    }
+    ttsRef.current = tts;
+  }, [ttsProvider, botId]);
 
   const startListening = useCallback(() => {
     setError(null);

@@ -12,14 +12,14 @@ export class OpenAIProvider implements LLMProvider {
     { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', contextWindow: 16385 },
   ];
 
-  private getClient() {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error('OPENAI_API_KEY is not configured');
+  private getClient(apiKeyOverride?: string) {
+    const apiKey = apiKeyOverride || process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not configured. Add it in Settings or as an environment variable.');
     return new OpenAI({ apiKey });
   }
 
   async complete(options: LLMCompletionOptions): Promise<LLMCompletionResult> {
-    const client = this.getClient();
+    const client = this.getClient(options.apiKey);
     const response = await client.chat.completions.create({
       model: options.model,
       messages: options.messages.map((m) => ({ role: m.role, content: m.content })),
@@ -42,7 +42,7 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   async *completeStream(options: LLMCompletionOptions): AsyncIterable<string> {
-    const client = this.getClient();
+    const client = this.getClient(options.apiKey);
     const stream = await client.chat.completions.create({
       model: options.model,
       messages: options.messages.map((m) => ({ role: m.role, content: m.content })),

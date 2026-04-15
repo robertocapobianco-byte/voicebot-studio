@@ -11,14 +11,14 @@ export class GoogleAIProvider implements LLMProvider {
     { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', contextWindow: 1048576, description: 'Balanced' },
   ];
 
-  private getClient() {
-    const apiKey = process.env.GOOGLE_AI_API_KEY;
-    if (!apiKey) throw new Error('GOOGLE_AI_API_KEY is not configured');
+  private getClient(apiKeyOverride?: string) {
+    const apiKey = apiKeyOverride || process.env.GOOGLE_AI_API_KEY;
+    if (!apiKey) throw new Error('GOOGLE_AI_API_KEY is not configured. Add it in Settings or as an environment variable.');
     return new GoogleGenerativeAI(apiKey);
   }
 
   async complete(options: LLMCompletionOptions): Promise<LLMCompletionResult> {
-    const client = this.getClient();
+    const client = this.getClient(options.apiKey);
     const systemMessage = options.messages.find((m) => m.role === 'system');
     const chatMessages = options.messages.filter((m) => m.role !== 'system');
 

@@ -11,14 +11,14 @@ export class AnthropicProvider implements LLMProvider {
     { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', contextWindow: 200000, description: 'Fastest' },
   ];
 
-  private getClient() {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured');
+  private getClient(apiKeyOverride?: string) {
+    const apiKey = apiKeyOverride || process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured. Add it in Settings or as an environment variable.');
     return new Anthropic({ apiKey });
   }
 
   async complete(options: LLMCompletionOptions): Promise<LLMCompletionResult> {
-    const client = this.getClient();
+    const client = this.getClient(options.apiKey);
 
     // Anthropic uses a separate system param, not in messages array
     const systemMessage = options.messages.find((m) => m.role === 'system');
@@ -47,7 +47,7 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   async *completeStream(options: LLMCompletionOptions): AsyncIterable<string> {
-    const client = this.getClient();
+    const client = this.getClient(options.apiKey);
     const systemMessage = options.messages.find((m) => m.role === 'system');
     const chatMessages = options.messages
       .filter((m) => m.role !== 'system')

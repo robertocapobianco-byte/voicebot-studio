@@ -5,10 +5,11 @@ import type { Retriever, RetrievalResult, DocumentChunk } from '@/types';
 /**
  * Generates embeddings using OpenAI's text-embedding-3-small model.
  * This is the shared embedding function used for both indexing and querying.
+ * Accepts an optional apiKey override; falls back to OPENAI_API_KEY env var.
  */
-export async function generateEmbedding(text: string): Promise<number[]> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY is required for embeddings');
+export async function generateEmbedding(text: string, apiKeyOverride?: string): Promise<number[]> {
+  const apiKey = apiKeyOverride || process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY is required for embeddings. Add it in Settings or as an environment variable.');
 
   const client = new OpenAI({ apiKey });
   const model = process.env.EMBEDDING_MODEL ?? 'text-embedding-3-small';
@@ -24,10 +25,11 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 /**
  * Batch generate embeddings for multiple texts.
  * Uses OpenAI's batch embedding endpoint for efficiency.
+ * Accepts an optional apiKey override; falls back to OPENAI_API_KEY env var.
  */
-export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY is required for embeddings');
+export async function generateEmbeddings(texts: string[], apiKeyOverride?: string): Promise<number[][]> {
+  const apiKey = apiKeyOverride || process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY is required for embeddings. Add it in Settings or as an environment variable.');
 
   const client = new OpenAI({ apiKey });
   const model = process.env.EMBEDDING_MODEL ?? 'text-embedding-3-small';

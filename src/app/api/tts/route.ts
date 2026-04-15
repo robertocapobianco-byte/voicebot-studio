@@ -1,24 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getBotConfig } from '@/lib/db';
 
 /**
  * Server-side TTS endpoint.
- * Currently a placeholder for ElevenLabs / other premium TTS APIs.
- * The default implementation uses Web Speech API on the client side.
+ * Resolves API keys from per-bot config (Supabase) with env var fallback.
  */
 export async function POST(request: NextRequest) {
   try {
-    const { text, provider } = await request.json();
+    const { text, provider, botId } = await request.json();
 
     if (!text) {
       return NextResponse.json({ error: 'text is required' }, { status: 400 });
     }
 
     if (provider === 'elevenlabs') {
-      const apiKey = process.env.ELEVENLABS_API_KEY;
-      const voiceId = process.env.ELEVENLABS_VOICE_ID ?? 'pNInz6obpgDQGcFmaJgB'; // Default Adam
+      // Resolve per-bot keys from Supabase, fallback to env vars
+      let botApiKey: string | undefined;
+      let botVoiceId: string | undefined;
+      if (botId) {
+        try {
+          const config = await getBotConfig(botId);
+          botApiKey = config?.apiKeys?.elevenlabs;
+          botVoiceId = config?.apiKeys?.elevenLabsVoiceId;
+        } catch {
+          // DB not available, continue with env fallback
+        }
+      }
+
+      const apiKey = botApiKey || process.env.ELEVENLABS_API_KEY;
+      const voiceId = botVoiceId || process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'; // Default Adam
 
       if (!apiKey) {
-        return NextResponse.json({ error: 'ELEVENLABS_API_KEY is not configured' }, { status: 500 });
+        return NextResponse.json({ error: 'ELEVENLABS_API_KEY is not configured. Add it in Settings or as an environment variable.' }, { status: 500 });
       }
 
       const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {

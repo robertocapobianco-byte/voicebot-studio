@@ -24,6 +24,16 @@ export type TonePreset =
 /** Detail level for responses */
 export type DetailLevel = 'minimal' | 'balanced' | 'detailed' | 'exhaustive';
 
+// --- API Keys (per-bot, stored in Supabase) ---
+
+export interface ApiKeysConfig {
+  openai?: string;
+  anthropic?: string;
+  google?: string;
+  elevenlabs?: string;
+  elevenLabsVoiceId?: string;
+}
+
 // --- Chatbot Configuration ---
 
 export interface BotPersonality {
@@ -45,6 +55,7 @@ export interface BotConfig {
   ttsProvider: TTSProviderID;
   temperature: number;
   maxTokens: number;
+  apiKeys?: ApiKeysConfig;
   createdAt: string;
   updatedAt: string;
 }
@@ -62,6 +73,7 @@ export interface LLMCompletionOptions {
   temperature?: number;
   maxTokens?: number;
   stream?: boolean;
+  apiKey?: string;
 }
 
 export interface LLMCompletionResult {

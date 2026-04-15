@@ -44,6 +44,7 @@ export async function upsertBotConfig(config: Partial<BotConfig> & { id: string 
     tts_provider: config.ttsProvider,
     temperature: config.temperature,
     max_tokens: config.maxTokens,
+    api_keys: config.apiKeys ?? null,
     updated_at: new Date().toISOString(),
   };
 
@@ -179,6 +180,7 @@ function mapBotRow(row: Record<string, unknown>): BotConfig {
     ttsProvider: (row.tts_provider as BotConfig['ttsProvider']) ?? 'web-speech',
     temperature: (row.temperature as number) ?? 0.7,
     maxTokens: (row.max_tokens as number) ?? 2048,
+    apiKeys: (row.api_keys as BotConfig['apiKeys']) ?? undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };

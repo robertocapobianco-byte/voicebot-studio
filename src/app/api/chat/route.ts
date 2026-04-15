@@ -77,13 +77,19 @@ export async function POST(request: NextRequest) {
       { role: 'user', content: message },
     ];
 
-    // 4. Call LLM
+    // 4. Call LLM — use per-bot API key if available, else env fallback
     const provider = getLLMProvider(config.llmProvider);
+    const providerKeyMap: Record<string, string | undefined> = {
+      openai: config.apiKeys?.openai,
+      anthropic: config.apiKeys?.anthropic,
+      google: config.apiKeys?.google,
+    };
     const result = await provider.complete({
       model: config.llmModel,
       messages,
       temperature: config.temperature,
       maxTokens: config.maxTokens,
+      apiKey: providerKeyMap[config.llmProvider],
     });
 
     const response: ChatResponse = {

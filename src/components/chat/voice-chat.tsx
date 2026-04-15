@@ -71,6 +71,7 @@ export function VoiceChat({ botConfig }: VoiceChatProps) {
   const voice = useVoice({
     sttProvider: botConfig.sttProvider,
     ttsProvider: botConfig.ttsProvider,
+    botId: botConfig.id,
     onTranscript: handleTranscript,
     onStateChange: setVoiceState,
   });

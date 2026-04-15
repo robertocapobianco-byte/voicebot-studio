@@ -11,6 +11,12 @@ export class ElevenLabsTTS implements TextToSpeechProvider {
 
   private audio: HTMLAudioElement | null = null;
   private speaking = false;
+  private botId: string | null = null;
+
+  /** Set the bot ID so the server can look up per-bot API keys from Supabase */
+  setBotId(botId: string) {
+    this.botId = botId;
+  }
 
   async speak(options: TTSOptions): Promise<void> {
     if (typeof window === 'undefined') {
@@ -28,6 +34,7 @@ export class ElevenLabsTTS implements TextToSpeechProvider {
         provider: 'elevenlabs',
         voice: options.voice,
         language: options.language,
+        botId: this.botId,
       }),
     });
 
