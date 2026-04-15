@@ -36,6 +36,16 @@ export class ElevenLabsTTS implements TextToSpeechProvider {
       throw new Error(err.error || `TTS error: ${response.status}`);
     }
 
+    // Make sure we got audio back, not a JSON error/fallback
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await response.json();
+      if (data.useClientTTS) {
+        throw new Error('Server returned fallback — ElevenLabs not configured on server');
+      }
+      throw new Error(data.error || 'Unexpected JSON response from TTS API');
+    }
+
     // Convert the audio stream to a blob and play it
     const audioBlob = await response.blob();
     const audioUrl = URL.createObjectURL(audioBlob);

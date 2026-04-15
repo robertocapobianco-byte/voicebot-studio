@@ -97,7 +97,11 @@ export function VoiceChat({ botConfig }: VoiceChatProps) {
     input.value = '';
     const reply = await sendMessage(text);
     if (reply) {
-      await voice.speak(reply);
+      try {
+        await voice.speak(reply);
+      } catch (err) {
+        console.error('TTS speak error:', err);
+      }
     }
   };
 

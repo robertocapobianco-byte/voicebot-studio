@@ -112,10 +112,20 @@ export default function SettingsPage() {
               onChange={(v) => updateConfig({ ttsProvider: v as TTSProviderID })}
               options={[
                 { value: 'web-speech', label: 'Browser (Speech Synthesis)' },
-                { value: 'elevenlabs', label: 'ElevenLabs (prossimamente)' },
+                { value: 'elevenlabs', label: 'ElevenLabs (Alta qualità)' },
               ]}
             />
           </div>
+
+          {config.ttsProvider === 'elevenlabs' && (
+            <div className="mt-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+              <p className="text-xs text-emerald-700">
+                <strong>ElevenLabs attivo.</strong> Assicurati che <code className="px-1 bg-emerald-100 rounded">ELEVENLABS_API_KEY</code> sia
+                configurata nelle variabili d&apos;ambiente di Vercel.
+                Opzionale: <code className="px-1 bg-emerald-100 rounded">ELEVENLABS_VOICE_ID</code> per scegliere la voce.
+              </p>
+            </div>
+          )}
         </Card>
 
         {/* Info */}

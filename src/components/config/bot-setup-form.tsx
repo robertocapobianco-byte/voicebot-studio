@@ -8,7 +8,7 @@ import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Save, RotateCcw, Sparkles } from 'lucide-react';
-import type { BotConfig, BotPersonality, TonePreset, DetailLevel, LLMProviderID, STTProviderID, TTSProviderID } from '@/types';
+import type { BotConfig, BotPersonality, TonePreset, DetailLevel, LLMProviderID } from '@/types';
 
 interface BotSetupFormProps {
   config: BotConfig;
@@ -61,16 +61,6 @@ const modelsByProvider: Record<LLMProviderID, { value: string; label: string }[]
     { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
   ],
 };
-
-const sttOptions: { value: STTProviderID; label: string }[] = [
-  { value: 'web-speech', label: 'Browser (Gratis)' },
-  { value: 'whisper', label: 'Whisper (OpenAI)' },
-];
-
-const ttsOptions: { value: TTSProviderID; label: string }[] = [
-  { value: 'web-speech', label: 'Browser (Gratis)' },
-  { value: 'elevenlabs', label: 'ElevenLabs (Alta qualità)' },
-];
 
 export function BotSetupForm({
   config,
@@ -229,36 +219,6 @@ export function BotSetupForm({
             max={8192}
           />
         </div>
-      </Card>
-
-      {/* Voice / Speech */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Voce</CardTitle>
-        </CardHeader>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Select
-            label="Speech-to-Text"
-            value={config.sttProvider}
-            onChange={(v) => onUpdate({ sttProvider: v as STTProviderID })}
-            options={sttOptions}
-          />
-
-          <Select
-            label="Text-to-Speech"
-            value={config.ttsProvider}
-            onChange={(v) => onUpdate({ ttsProvider: v as TTSProviderID })}
-            options={ttsOptions}
-          />
-        </div>
-
-        {config.ttsProvider === 'elevenlabs' && (
-          <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-            Richiede la variabile <strong>ELEVENLABS_API_KEY</strong> configurata su Vercel.
-            Opzionale: <strong>ELEVENLABS_VOICE_ID</strong> per scegliere una voce specifica.
-          </div>
-        )}
       </Card>
 
       {/* Actions */}
