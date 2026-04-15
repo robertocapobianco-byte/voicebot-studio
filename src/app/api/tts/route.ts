@@ -35,7 +35,12 @@ export async function POST(request: NextRequest) {
       });
 
       if (!response.ok) {
-        throw new Error(`ElevenLabs API error: ${response.status}`);
+        const errorBody = await response.text().catch(() => 'no body');
+        console.error(`ElevenLabs API error: status=${response.status}, body=${errorBody}`);
+        return NextResponse.json(
+          { error: `ElevenLabs error ${response.status}: ${errorBody}` },
+          { status: 502 }
+        );
       }
 
       const audioBuffer = await response.arrayBuffer();

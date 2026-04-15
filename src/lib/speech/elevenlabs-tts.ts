@@ -32,8 +32,16 @@ export class ElevenLabsTTS implements TextToSpeechProvider {
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({ error: 'TTS request failed' }));
-      throw new Error(err.error || `TTS error: ${response.status}`);
+      const errText = await response.text().catch(() => 'TTS request failed');
+      let errorMsg = `TTS error ${response.status}`;
+      try {
+        const errJson = JSON.parse(errText);
+        errorMsg = errJson.error || errorMsg;
+      } catch {
+        errorMsg = errText || errorMsg;
+      }
+      console.error('ElevenLabs TTS error:', errorMsg);
+      throw new Error(errorMsg);
     }
 
     // Make sure we got audio back, not a JSON error/fallback
